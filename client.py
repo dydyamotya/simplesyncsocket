@@ -35,7 +35,7 @@ class Client:
         while True:
             to_send = data_to_send_io.read(1024)
             if not to_send:
-                sock.send(b"\x00\x00\x00\x00")
+                sock.send(SIGTTERM)
                 break
             else:
                 sock.send(to_send)
