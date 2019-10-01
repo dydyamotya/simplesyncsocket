@@ -11,11 +11,15 @@ import socket
 import zipfile
 
 SIGTTERM = b"\x00\x00\x00\x00"
+BROADCAST_PORT = 44444
 
 
 class Client:
     def __init__(self, ip: str, folder_to_path: str, port: int = 9090, debug=False):
-        self.ip = ip
+        if ip == "search":
+            self.ip = self.broadcast_retrieve()
+        else:
+            self.ip = ip
         self.folder_to_path = folder_to_path
         self.port = port
         self.debug = debug
@@ -27,6 +31,15 @@ class Client:
             return folder + file
         else:
             return folder + '/' + file
+
+    @staticmethod
+    def broadcast_retrieve():
+        s_broad = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s_broad.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        s_broad.sendto("search".encode("utf-8"), ("<broadcast>", BROADCAST_PORT))
+        data, addr = s_broad.recvfrom(1024)
+        if data.decode("utf-8") == "search_request":
+            return addr[0]
 
     def start_download_thread(self):
         sock = socket.socket()

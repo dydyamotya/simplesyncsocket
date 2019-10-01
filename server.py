@@ -19,11 +19,12 @@ import threading
 import zipfile
 
 SIGTTERM = b"\x00\x00\x00\x00"
-
+BROADCAST_PORT = 44444
 
 class Server:
     def __init__(self, folder_to_sync: str, ip: str = "", port: int = 9090, debug=False):
         """Accepts path of folder, which should be synced"""
+        self.is_stopped = False
         self.CLIENTS = {}
         if ip:
             self.ip = ip
@@ -69,6 +70,8 @@ class Server:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.bind((self.ip, self.port))
         s.listen(10)
+        broadcast_thread = threading.Thread(target=self.broadcasting)
+        broadcast_thread.start()
         while True:
             try:
                 client_sock, addr = s.accept()
@@ -79,7 +82,26 @@ class Server:
                 self.CLIENTS[addr] = client_sock
                 threading.Thread(target=self._process_client,
                                  args=(client_sock, len(self.CLIENTS),)).start()
+            finally:
+                if self.is_stopped:
+                    break
         s.close()
+
+    def broadcasting(self):
+        s_broad = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s_broad.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        s_broad.bind(("", BROADCAST_PORT))
+        while True:
+            if self.is_stopped:
+                s_broad.close()
+                break
+            data, addr = s_broad.recvfrom(1024)
+            if data.decode("utf-8") == 'search':
+                logging.info("recieved ip request from: {}".format(addr))
+                s_broad.sendto("search_request".encode("utf-8"), addr)
+
+    def stop_server(self):
+        self.is_stopped = True
 
     def _process_client(self, client_sock: socket.socket, client_num: int):
         """client_sock: socket accepted from the client"""
