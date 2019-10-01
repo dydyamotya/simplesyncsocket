@@ -5,7 +5,6 @@ Cause i heard threading is bad for this works
 Also some ideas:
     > Caching zip-files by they hashes
     > Taking different commands
-    > Deleting files with very small size or little difference in time
     > Sync with database file
 """
 
@@ -19,6 +18,7 @@ import threading
 import zipfile
 
 SIGTTERM = b"\x00\x00\x00\x00"
+SIGTPTERM = b"\x00\x00\x00\x01"
 BROADCAST_PORT = 44444
 
 class Server:
@@ -120,13 +120,26 @@ class Server:
             if data[-4:] == SIGTTERM:
                 data = data[:-4]
                 break
-        existed_files_list = json.loads(data.decode("utf-8"))
+        parts = data.split(SIGTPTERM)
+        if len(parts) > 3:
+            raise Exception("Mistake in protocol, now you must fix it")
+        existed_files_list = json.loads(parts[0].decode("utf-8"))
+        date: float = datetime.datetime.strptime(parts[1].decode("utf-8"), "%Y_%m_%d").timestamp()
+        size = int(parts[2].decode("utf-8"))
+        logging.debug("Retrieve this conditions:{} {}".format(parts[1].decode('utf-8'), size))
 
         to_send_list = []
 
         for file in self._get_files_in_folder():
             if file not in existed_files_list:
-                to_send_list.append(file)
+                file_path = self.concat_ff(self.folder_to_sync, file)
+                info = os.stat(file_path)
+                try:  # Should try to parse with custom parser
+                    datetime_cond = self._parse_datetime(file) > date
+                except:
+                    datetime_cond = info.st_ctime > date
+                if datetime_cond and info.st_size > size:
+                    to_send_list.append(file)
 
         zip_name = "send_client{}.zip".format(client_num)
         with zipfile.ZipFile(zip_name, 'w') as zfd:
@@ -150,6 +163,17 @@ class Server:
         for file in os.listdir(self.folder_to_sync):
             if not (file.startswith("send") or file.startswith("logs")):
                 yield file
+
+    @staticmethod
+    def _parse_datetime(name: str) -> float:
+        """This method is specific for my work"""
+        name = os.path.splitext(name)[0]
+        try:
+            time = datetime.datetime.strptime(name, "%d.%m.%Y-%H.%M.%S")
+        except:
+            raise Exception("Cant parse file")
+        else:
+            return float(time.timestamp())
 
 
 if __name__ == '__main__':
